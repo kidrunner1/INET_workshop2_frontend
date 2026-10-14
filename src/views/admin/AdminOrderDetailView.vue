@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { withMinimumLoading } from '@/utils/with-minimum-loading'
+
 import { useToastStore } from '@/stores/toast.store'
 
 import PageSkeleton from '@/components/common/PageSkeleton.vue'
@@ -76,7 +78,7 @@ const fetchOrder = async () => {
 
     const id = route.params.id as string
 
-    const response = await getAdminOrderById(id)
+    const response = await withMinimumLoading(() => getAdminOrderById(id))
 
     order.value = response.data
   } catch (error) {
@@ -130,43 +132,32 @@ onMounted(() => {
 <template>
   <section class="px-5 py-6 sm:px-8 sm:py-8">
     <div class="mx-auto max-w-6xl">
-      <RouterLink
-        to="/admin/orders"
-        class="mb-6 inline-flex items-center gap-2 text-sm font-medium text-slate-500 transition hover:text-orange-600"
-      >
-        ← กลับไป Orders
+      <RouterLink to="/admin/orders"
+        class="mb-6 inline-flex items-center gap-2 text-sm font-medium text-slate-500 transition hover:text-orange-600">
+        <span class="material-symbols-rounded align-middle text-[20px]" aria-hidden="true">arrow_back</span> กลับไป Orders
       </RouterLink>
 
       <PageSkeleton v-if="isLoading" variant="order-detail" label="กำลังโหลด Order..." admin />
 
-      <div
-        v-else-if="errorMessage && !order"
-        class="rounded-xl border border-red-100 bg-red-50 p-4 text-red-600"
-      >
+      <div v-else-if="errorMessage && !order" class="rounded-xl border border-red-100 bg-red-50 p-4 text-red-600">
         {{ errorMessage }}
       </div>
 
       <div v-else-if="order" class="space-y-6">
-        <div
-          v-if="errorMessage"
-          class="rounded-xl border border-red-100 bg-red-50 p-4 text-red-600"
-        >
+        <div v-if="errorMessage" class="rounded-xl border border-red-100 bg-red-50 p-4 text-red-600">
           {{ errorMessage }}
         </div>
-        <div
-          v-if="successMessage"
-          class="rounded-xl border border-green-100 bg-green-50 p-4 text-green-700"
-        >
+        <div v-if="successMessage" class="rounded-xl border border-green-100 bg-green-50 p-4 text-green-700">
           {{ successMessage }}
         </div>
 
         <!-- Order Header -->
-        <section class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <section class="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
           <div class="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <p class="text-sm font-medium text-slate-400">Order ID</p>
 
-              <h1 class="mt-1 text-2xl font-bold tracking-tight text-slate-900">
+              <h1 class="mt-1 text-xl font-bold tracking-tight text-slate-900">
                 #{{ order._id }}
               </h1>
 
@@ -175,10 +166,7 @@ onMounted(() => {
               </p>
             </div>
 
-            <span
-              class="w-fit rounded-full px-4 py-2 text-sm font-semibold"
-              :class="getStatusClass(order.status)"
-            >
+            <span class="w-fit rounded-full px-4 py-2 text-sm font-semibold" :class="getStatusClass(order.status)">
               {{ getStatusLabel(order.status) }}
             </span>
           </div>
@@ -186,7 +174,7 @@ onMounted(() => {
 
         <div class="grid gap-6 lg:grid-cols-[1fr_320px]">
           <!-- Products -->
-          <section class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <section class="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
             <div>
               <h2 class="text-lg font-bold text-slate-900">รายการสินค้า</h2>
 
@@ -194,11 +182,7 @@ onMounted(() => {
             </div>
 
             <div class="mt-5 divide-y divide-slate-100">
-              <div
-                v-for="item in order.items"
-                :key="item.productId"
-                class="flex justify-between gap-5 py-5"
-              >
+              <div v-for="item in order.items" :key="item.productId" class="flex justify-between gap-5 py-5">
                 <div>
                   <p class="font-semibold text-slate-900">
                     {{ item.name }}
@@ -218,7 +202,7 @@ onMounted(() => {
             <div class="mt-5 flex items-center justify-between border-t border-slate-200 pt-5">
               <span class="font-semibold text-slate-600"> ยอดรวมทั้งหมด </span>
 
-              <span class="text-3xl font-bold text-orange-600">
+              <span class="text-xl font-bold text-orange-600">
                 ฿{{ order.totalPrice.toLocaleString() }}
               </span>
             </div>
@@ -226,13 +210,12 @@ onMounted(() => {
 
           <div class="space-y-6">
             <!-- Customer -->
-            <section class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+            <section class="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
               <p class="text-sm font-medium text-slate-400">Customer</p>
 
               <div class="mt-4 flex items-center gap-3">
                 <div
-                  class="flex h-11 w-11 items-center justify-center rounded-xl bg-orange-50 font-bold text-orange-600"
-                >
+                  class="flex h-11 w-11 items-center justify-center rounded-xl bg-orange-50 font-bold text-orange-600">
                   {{ order.userId?.username?.charAt(0).toUpperCase() ?? '?' }}
                 </div>
 
@@ -249,24 +232,17 @@ onMounted(() => {
             </section>
 
             <!-- Status Action -->
-            <section class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+            <section class="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
               <h2 class="font-bold text-slate-900">Update Status</h2>
 
               <p class="mt-1 text-sm text-slate-500">เปลี่ยนขั้นตอนการดำเนินการของ Order</p>
 
               <div v-if="getAllowedStatuses(order.status).length > 0" class="mt-5 space-y-3">
-                <button
-                  v-for="status in getAllowedStatuses(order.status)"
-                  :key="status"
-                  :disabled="isUpdating"
-                  class="w-full rounded-xl px-4 py-3 text-sm font-semibold transition disabled:opacity-50"
-                  :class="
-                    status === 'cancelled'
-                      ? 'bg-red-50 text-red-600 hover:bg-red-100'
-                      : 'bg-orange-500 text-white hover:bg-orange-600'
-                  "
-                  @click="handleStatusChange(status)"
-                >
+                <button v-for="status in getAllowedStatuses(order.status)" :key="status" :disabled="isUpdating"
+                  class="w-full rounded-xl px-4 py-3 text-sm font-semibold transition disabled:opacity-50" :class="status === 'cancelled'
+                    ? 'bg-red-50 text-red-600 hover:bg-red-100'
+                    : 'bg-orange-500 text-white hover:bg-orange-600'
+                    " @click="handleStatusChange(status)">
                   {{ status === 'cancelled' ? 'ยกเลิก Order' : getStatusLabel(status) }}
                 </button>
               </div>

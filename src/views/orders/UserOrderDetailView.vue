@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { withMinimumLoading } from '@/utils/with-minimum-loading'
+
 import { useToastStore } from '@/stores/toast.store'
 
 import PageSkeleton from '@/components/common/PageSkeleton.vue'
@@ -28,7 +30,7 @@ const fetchOrder = async () => {
     isLoading.value = true
     errorMessage.value = ''
 
-    const response = await getMyOrderById(orderId.value)
+    const response = await withMinimumLoading(() => getMyOrderById(orderId.value))
 
     order.value = response.data
   } catch (error) {
@@ -82,34 +84,29 @@ onMounted(() => {
 
 <template>
   <main class="mx-auto max-w-6xl px-5 py-8 sm:px-6 lg:px-8">
-    <RouterLink
-      to="/orders"
-      class="inline-flex items-center gap-2 text-sm font-medium text-slate-500 transition hover:text-orange-600"
-    >
-      ← กลับไป My Orders
+    <RouterLink to="/orders"
+      class="inline-flex items-center gap-2 text-sm font-medium text-slate-500 transition hover:text-orange-600">
+      <span class="material-symbols-rounded align-middle text-[20px]" aria-hidden="true">arrow_back</span> กลับไป My Orders
     </RouterLink>
 
     <!-- Loading -->
     <PageSkeleton v-if="isLoading" variant="order-detail" label="กำลังโหลด Order..." class="mt-6" />
 
     <!-- Error -->
-    <div
-      v-else-if="errorMessage"
-      class="mt-6 rounded-2xl border border-red-100 bg-red-50 p-5 text-red-600"
-    >
+    <div v-else-if="errorMessage" class="mt-6 rounded-xl border border-red-100 bg-red-50 p-5 text-red-600">
       {{ errorMessage }}
     </div>
 
     <div v-else-if="order" class="mt-6 space-y-6">
       <!-- Header -->
-      <section class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+      <section class="rounded-xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
         <div class="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <p class="text-sm font-semibold uppercase tracking-[0.15em] text-orange-500">
               Order Detail
             </p>
 
-            <h1 class="mt-2 break-all text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
+            <h1 class="mt-2 break-all text-xl font-bold tracking-tight text-slate-900 sm:text-xl">
               #{{ order._id }}
             </h1>
 
@@ -119,10 +116,7 @@ onMounted(() => {
             </p>
           </div>
 
-          <span
-            class="w-fit rounded-full px-4 py-2 text-sm font-semibold"
-            :class="getStatusClass(order.status)"
-          >
+          <span class="w-fit rounded-full px-4 py-2 text-sm font-semibold" :class="getStatusClass(order.status)">
             {{ getStatusLabel(order.status) }}
           </span>
         </div>
@@ -130,7 +124,7 @@ onMounted(() => {
 
       <div class="grid gap-6 lg:grid-cols-[1fr_340px]">
         <!-- Products -->
-        <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+        <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
           <div class="flex items-end justify-between">
             <div>
               <h2 class="text-lg font-bold text-slate-900">รายการสินค้า</h2>
@@ -145,11 +139,7 @@ onMounted(() => {
           </div>
 
           <div class="mt-5 divide-y divide-slate-100">
-            <article
-              v-for="item in order.items"
-              :key="item.productId"
-              class="py-5 first:pt-0 last:pb-0"
-            >
+            <article v-for="item in order.items" :key="item.productId" class="py-5 first:pt-0 last:pb-0">
               <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div class="min-w-0">
                   <p class="font-semibold text-slate-900">
@@ -182,7 +172,7 @@ onMounted(() => {
         <!-- Right -->
         <aside class="space-y-6">
           <!-- Summary -->
-          <section class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <section class="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
             <p class="text-sm font-semibold text-orange-500">Order Summary</p>
 
             <h2 class="mt-1 text-lg font-bold text-slate-900">สรุปคำสั่งซื้อ</h2>
@@ -219,7 +209,7 @@ onMounted(() => {
               <div class="flex items-end justify-between">
                 <span class="font-semibold text-slate-600"> ยอดรวม </span>
 
-                <span class="text-3xl font-bold text-orange-600">
+                <span class="text-xl font-bold text-orange-600">
                   ฿{{ order.totalPrice.toLocaleString() }}
                 </span>
               </div>
@@ -227,16 +217,14 @@ onMounted(() => {
           </section>
 
           <!-- Status -->
-          <section class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <section class="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
             <h2 class="font-bold text-slate-900">สถานะคำสั่งซื้อ</h2>
 
             <p class="mt-1 text-sm text-slate-500">ติดตามขั้นตอนปัจจุบันของ Order</p>
 
             <div class="mt-5 rounded-xl bg-slate-50 p-4">
-              <span
-                class="inline-flex rounded-full px-3 py-1.5 text-sm font-semibold"
-                :class="getStatusClass(order.status)"
-              >
+              <span class="inline-flex rounded-full px-3 py-1.5 text-sm font-semibold"
+                :class="getStatusClass(order.status)">
                 {{ getStatusLabel(order.status) }}
               </span>
 

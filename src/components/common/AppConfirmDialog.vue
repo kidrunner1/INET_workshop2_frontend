@@ -1,5 +1,11 @@
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, ref, useId, watch } from 'vue'
+import {
+  nextTick,
+  onBeforeUnmount,
+  ref,
+  useId,
+  watch,
+} from 'vue'
 
 const props = withDefaults(
   defineProps<{
@@ -24,123 +30,182 @@ const props = withDefaults(
   },
 )
 
-const emit = defineEmits<{ confirm: []; cancel: [] }>()
+const emit = defineEmits<{
+  confirm: []
+  cancel: []
+}>()
+
 const dialog = ref<HTMLDialogElement | null>(null)
-const cancelButton = ref<HTMLButtonElement | null>(null)
+
+const cancelButton =
+  ref<HTMLButtonElement | null>(null)
+
 const titleId = useId()
 const descriptionId = useId()
+
 let opener: HTMLElement | null = null
 let previousOverflow: string | null = null
 
-const restorePage = () => {
-  if (previousOverflow !== null) {
-    document.documentElement.style.overflow = previousOverflow
-    previousOverflow = null
+const restorePage = (): void => {
+  if (previousOverflow === null) return
+
+  document.documentElement.style.overflow =
+    previousOverflow
+
+  previousOverflow = null
+}
+
+const requestCancel = (): void => {
+  if (props.busy) return
+
+  emit('cancel')
+}
+
+const handleClose = (): void => {
+  restorePage()
+
+  if (props.open) {
+    emit('cancel')
   }
+
+  const target = opener?.isConnected
+    ? opener
+    : props.fallbackFocus
+
+  target?.focus({
+    preventScroll: true,
+  })
 }
 
 watch(
   () => props.open,
   async (open) => {
     await nextTick()
-    if (open !== props.open || !dialog.value) return
-    if (open && !dialog.value.open) {
-      opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
-      previousOverflow = document.documentElement.style.overflow
-      document.documentElement.style.overflow = 'hidden'
+
+    if (
+      open !== props.open ||
+      !dialog.value
+    ) {
+      return
+    }
+
+    if (
+      open &&
+      !dialog.value.open
+    ) {
+      opener =
+        document.activeElement instanceof HTMLElement
+          ? document.activeElement
+          : null
+
+      previousOverflow =
+        document.documentElement.style.overflow
+
+      document.documentElement.style.overflow =
+        'hidden'
+
       dialog.value.showModal()
+
       cancelButton.value?.focus()
-    } else if (!open && dialog.value.open) {
+
+      return
+    }
+
+    if (
+      !open &&
+      dialog.value.open
+    ) {
       dialog.value.close()
     }
   },
-  { immediate: true },
+  {
+    immediate: true,
+  },
 )
-
-const requestCancel = () => {
-  if (!props.busy) emit('cancel')
-}
-
-const handleClose = () => {
-  restorePage()
-  if (props.open) emit('cancel')
-  const target = opener?.isConnected ? opener : props.fallbackFocus
-  target?.focus({ preventScroll: true })
-}
 
 onBeforeUnmount(restorePage)
 </script>
 
 <template>
   <Teleport to="body">
-    <dialog
-      ref="dialog"
-      :aria-labelledby="titleId"
-      :aria-describedby="descriptionId"
-      :aria-busy="busy"
-      class="m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-md overflow-y-auto rounded-3xl border border-slate-200 bg-white p-6 text-slate-900 shadow-2xl backdrop:bg-slate-950/40 backdrop:backdrop-blur-sm sm:p-8"
-      @cancel.prevent="requestCancel"
-      @close="handleClose"
-    >
-      <div
-        aria-hidden="true"
-        class="mb-5 flex h-12 w-12 items-center justify-center rounded-2xl"
-        :class="intent === 'danger' ? 'bg-red-50 text-red-600' : 'bg-orange-50 text-orange-600'"
-      >
-        <svg
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="1.75"
-          class="h-6 w-6"
-        >
-          <path
-            v-if="intent === 'danger'"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v5m4-5v5"
-          />
-          <path
-            v-else
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            d="M3 3h2l2.4 12h11.2L21 7H6M9 20h.01M18 20h.01"
-          />
-        </svg>
+    <dialog ref="dialog" :aria-labelledby="titleId" :aria-describedby="descriptionId" :aria-busy="busy"
+      class="m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-md overflow-y-auto rounded-2xl border border-slate-200 bg-white p-6 text-slate-900 shadow-2xl backdrop:bg-slate-950/40 backdrop:backdrop-blur-sm sm:p-8"
+      @cancel.prevent="requestCancel" @close="handleClose">
+      <!-- Icon -->
+      <div aria-hidden="true" class="mb-5 flex h-12 w-12 items-center justify-center rounded-2xl" :class="intent === 'danger'
+          ? 'bg-red-50 text-red-600'
+          : 'bg-orange-50 text-orange-600'
+        ">
+        <span class="material-symbols-rounded text-[26px]">
+          {{
+            intent === 'danger'
+              ? 'delete'
+              : 'shopping_bag'
+          }}
+        </span>
       </div>
-      <h2 :id="titleId" class="text-xl font-bold">{{ title }}</h2>
-      <p :id="descriptionId" class="mt-3 break-words text-sm leading-6 text-slate-500">
+
+      <!-- Content -->
+      <h2 :id="titleId" class="text-xl font-bold tracking-tight text-slate-900">
+        {{ title }}
+      </h2>
+
+      <p :id="descriptionId" class="mt-3 wrap-break-word text-sm leading-6 text-slate-500">
         {{ description }}
       </p>
-      <p
-        v-if="error"
-        role="alert"
-        class="mt-4 rounded-xl border border-red-100 bg-red-50 p-3 text-sm text-red-600"
-      >
-        {{ error }}
-      </p>
+
+      <!-- Error -->
+      <div v-if="error" role="alert"
+        class="mt-4 flex items-start gap-2 rounded-xl border border-red-100 bg-red-50 p-3 text-sm text-red-600">
+        <span class="material-symbols-rounded mt-0.5 text-[18px]">
+          error
+        </span>
+
+        <span>
+          {{ error }}
+        </span>
+      </div>
+
+      <!-- Actions -->
       <div class="mt-6 flex flex-col-reverse gap-3 sm:flex-row">
-        <button
-          ref="cancelButton"
-          type="button"
-          :disabled="busy"
-          class="flex-1 cursor-pointer rounded-xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 active:bg-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-500 disabled:cursor-not-allowed disabled:opacity-50"
-          @click="requestCancel"
-        >
+        <!-- Cancel -->
+        <button ref="cancelButton" type="button" :disabled="busy"
+          class="flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 active:bg-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-500 disabled:cursor-not-allowed disabled:opacity-50"
+          @click="requestCancel">
+          <span class="material-symbols-rounded text-[18px]">
+            close
+          </span>
+
           {{ cancelLabel }}
         </button>
-        <button
-          type="button"
-          :disabled="busy"
-          class="flex-1 cursor-pointer rounded-xl px-4 py-3 text-sm font-semibold text-white transition focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-          :class="
-            intent === 'danger'
+
+        <!-- Confirm -->
+        <button type="button" :disabled="busy"
+          class="flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold text-white transition focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+          :class="intent === 'danger'
               ? 'bg-red-600 hover:bg-red-700 active:bg-red-800 focus-visible:outline-red-600'
               : 'bg-orange-500 hover:bg-orange-600 active:bg-orange-700 focus-visible:outline-orange-500'
-          "
-          @click="!busy && emit('confirm')"
-        >
-          {{ busy ? busyLabel : confirmLabel }}
+            " @click="
+            !busy &&
+            emit('confirm')
+            ">
+          <span class="material-symbols-rounded text-[19px]" :class="{
+            'animate-spin': busy,
+          }">
+            {{
+              busy
+                ? 'progress_activity'
+                : intent === 'danger'
+                  ? 'delete'
+                  : 'check_circle'
+            }}
+          </span>
+
+          {{
+            busy
+              ? busyLabel
+              : confirmLabel
+          }}
         </button>
       </div>
     </dialog>

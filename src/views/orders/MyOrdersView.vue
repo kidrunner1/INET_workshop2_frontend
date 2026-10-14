@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { withMinimumLoading } from '@/utils/with-minimum-loading'
+
 import { useToastStore } from '@/stores/toast.store'
 
 import PageSkeleton from '@/components/common/PageSkeleton.vue'
@@ -22,7 +24,7 @@ const fetchOrders = async () => {
     isLoading.value = true
     errorMessage.value = ''
 
-    const response = await getMyOrders()
+    const response = await withMinimumLoading(() => getMyOrders())
 
     orders.value = response.data
   } catch (error) {
@@ -82,17 +84,15 @@ onMounted(() => {
           Order History
         </p>
 
-        <h1 class="mt-2 text-3xl font-bold tracking-tight text-slate-900">คำสั่งซื้อของฉัน</h1>
+        <h1 class="mt-2 text-xl font-bold tracking-tight text-slate-900">คำสั่งซื้อของฉัน</h1>
 
         <p class="mt-2 text-sm text-slate-500">
           ตรวจสอบรายการสั่งซื้อ และติดตามสถานะของแต่ละ Order
         </p>
       </div>
 
-      <RouterLink
-        to="/products"
-        class="inline-flex w-fit rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-600"
-      >
+      <RouterLink to="/products"
+        class="inline-flex w-fit rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-600">
         เลือกซื้อสินค้าเพิ่ม
       </RouterLink>
     </div>
@@ -101,57 +101,40 @@ onMounted(() => {
     <PageSkeleton v-if="isLoading" variant="orders" label="กำลังโหลด Orders..." class="mt-6" />
 
     <!-- Error -->
-    <div
-      v-else-if="errorMessage"
-      class="mt-6 rounded-2xl border border-red-100 bg-red-50 p-5 text-red-600"
-    >
+    <div v-else-if="errorMessage" class="mt-6 rounded-xl border border-red-100 bg-red-50 p-5 text-red-600">
       {{ errorMessage }}
     </div>
 
     <!-- Empty -->
-    <div
-      v-else-if="orders.length === 0"
-      class="mt-6 rounded-3xl border border-slate-200 bg-white p-12 text-center shadow-sm"
-    >
-      <div
-        class="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-orange-50 text-2xl"
-      >
-        📦
+    <div v-else-if="orders.length === 0"
+      class="mt-6 rounded-xl border border-slate-200 bg-white p-12 text-center shadow-sm">
+      <div class="mx-auto flex h-16 w-16 items-center justify-center rounded-xl bg-orange-50 text-xl">
+        <span class="material-symbols-rounded align-middle text-[32px]" aria-hidden="true">inventory_2</span>
       </div>
 
       <h2 class="mt-5 text-xl font-bold text-slate-900">ยังไม่มีคำสั่งซื้อ</h2>
 
       <p class="mt-2 text-sm text-slate-500">เมื่อคุณ Checkout แล้ว Order จะมาแสดงที่หน้านี้</p>
 
-      <RouterLink
-        to="/products"
-        class="mt-6 inline-flex rounded-xl bg-orange-500 px-5 py-3 text-sm font-semibold text-white transition hover:bg-orange-600"
-      >
+      <RouterLink to="/products"
+        class="mt-6 inline-flex rounded-xl bg-orange-500 px-5 py-3 text-sm font-semibold text-white transition hover:bg-orange-600">
         ไปเลือกสินค้า
       </RouterLink>
     </div>
 
     <!-- Orders -->
     <div v-else class="mt-6 space-y-4">
-      <article
-        v-for="order in orders"
-        :key="order._id"
-        class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-orange-200 sm:p-6"
-      >
+      <article v-for="order in orders" :key="order._id"
+        class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-orange-200 sm:p-6">
         <div class="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <div class="flex flex-wrap items-center gap-3">
-              <RouterLink
-                :to="`/orders/${order._id}`"
-                class="text-lg font-bold text-slate-900 transition hover:text-orange-600"
-              >
+              <RouterLink :to="`/orders/${order._id}`"
+                class="text-lg font-bold text-slate-900 transition hover:text-orange-600">
                 Order #{{ order._id.slice(-8) }}
               </RouterLink>
 
-              <span
-                class="rounded-full px-3 py-1.5 text-xs font-semibold"
-                :class="getStatusClass(order.status)"
-              >
+              <span class="rounded-full px-3 py-1.5 text-xs font-semibold" :class="getStatusClass(order.status)">
                 {{ getStatusLabel(order.status) }}
               </span>
             </div>
@@ -193,11 +176,8 @@ onMounted(() => {
         <!-- Product Preview -->
         <div class="mt-5 border-t border-slate-100 pt-5">
           <div class="flex flex-col gap-3">
-            <div
-              v-for="item in order.items.slice(0, 2)"
-              :key="item.productId"
-              class="flex items-center justify-between gap-4"
-            >
+            <div v-for="item in order.items.slice(0, 2)" :key="item.productId"
+              class="flex items-center justify-between gap-4">
               <div class="min-w-0">
                 <p class="truncate text-sm font-medium text-slate-700">
                   {{ item.name }}
@@ -224,10 +204,8 @@ onMounted(() => {
 
             <span v-else />
 
-            <RouterLink
-              :to="`/orders/${order._id}`"
-              class="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-600 transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-600"
-            >
+            <RouterLink :to="`/orders/${order._id}`"
+              class="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-600 transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-600">
               ดูรายละเอียด
             </RouterLink>
           </div>

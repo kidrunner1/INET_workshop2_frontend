@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { withMinimumLoading } from '@/utils/with-minimum-loading'
+
 import { useToastStore } from '@/stores/toast.store'
 
 import AppSkeleton from '@/components/common/AppSkeleton.vue'
@@ -26,7 +28,7 @@ const fetchOrders = async () => {
     isLoading.value = true
     errorMessage.value = ''
 
-    const response = await getAdminOrders()
+    const response = await withMinimumLoading(() => getAdminOrders())
 
     orders.value = response.data
   } catch (error) {
@@ -125,42 +127,36 @@ onMounted(() => {
   <section class="p-8">
     <div class="mx-auto max-w-7xl">
       <div class="mb-6">
-        <h1 class="text-3xl font-bold text-gray-900">Order Management</h1>
+        <h1 class="text-xl font-bold text-gray-900">Order Management</h1>
 
         <p class="mt-1 text-gray-500">จัดการคำสั่งซื้อของลูกค้า</p>
       </div>
 
       <div class="mb-6 grid gap-4 md:grid-cols-3">
-        <div class="rounded-2xl bg-white p-5 shadow-sm">
+        <div class="rounded-xl bg-white p-5 shadow-sm">
           <p class="text-sm text-gray-500">Orders ทั้งหมด</p>
 
-          <p class="mt-2 text-3xl font-bold">
-            <AppSkeleton v-if="isLoading" class="inline-block h-[1em] w-16 align-middle" /><span
-              v-else
-              >{{ totalOrders }}</span
-            >
+          <p class="mt-2 text-xl font-bold">
+            <AppSkeleton v-if="isLoading" class="inline-block h-[1em] w-16 align-middle" /><span v-else>{{ totalOrders
+            }}</span>
           </p>
         </div>
 
-        <div class="rounded-2xl bg-white p-5 shadow-sm">
+        <div class="rounded-xl bg-white p-5 shadow-sm">
           <p class="text-sm text-gray-500">รอดำเนินการ</p>
 
-          <p class="mt-2 text-3xl font-bold text-orange-500">
-            <AppSkeleton v-if="isLoading" class="inline-block h-[1em] w-16 align-middle" /><span
-              v-else
-              >{{ pendingOrders }}</span
-            >
+          <p class="mt-2 text-xl font-bold text-orange-500">
+            <AppSkeleton v-if="isLoading" class="inline-block h-[1em] w-16 align-middle" /><span v-else>{{ pendingOrders
+            }}</span>
           </p>
         </div>
 
-        <div class="rounded-2xl bg-white p-5 shadow-sm">
+        <div class="rounded-xl bg-white p-5 shadow-sm">
           <p class="text-sm text-gray-500">สำเร็จแล้ว</p>
 
-          <p class="mt-2 text-3xl font-bold text-green-600">
-            <AppSkeleton v-if="isLoading" class="inline-block h-[1em] w-16 align-middle" /><span
-              v-else
-              >{{ completedOrders }}</span
-            >
+          <p class="mt-2 text-xl font-bold text-green-600">
+            <AppSkeleton v-if="isLoading" class="inline-block h-[1em] w-16 align-middle" /><span v-else>{{
+              completedOrders }}</span>
           </p>
         </div>
       </div>
@@ -173,14 +169,8 @@ onMounted(() => {
         {{ errorMessage }}
       </div>
 
-      <div class="overflow-hidden rounded-2xl bg-white shadow-sm">
-        <PageSkeleton
-          v-if="isLoading"
-          variant="table"
-          label="กำลังโหลด Orders..."
-          :count="5"
-          :columns="7"
-        />
+      <div class="overflow-hidden rounded-xl bg-white shadow-sm">
+        <PageSkeleton v-if="isLoading" variant="table" label="กำลังโหลด Orders..." :count="5" :columns="7" />
 
         <div v-else-if="orders.length === 0" class="p-10 text-center text-gray-500">
           ยังไม่มี Order
@@ -209,10 +199,8 @@ onMounted(() => {
             <tbody>
               <tr v-for="order in orders" :key="order._id" class="border-b last:border-0">
                 <td class="px-6 py-4">
-                  <RouterLink
-                    :to="`/admin/orders/${order._id}`"
-                    class="font-medium text-gray-900 hover:text-orange-500"
-                  >
+                  <RouterLink :to="`/admin/orders/${order._id}`"
+                    class="font-medium text-gray-900 hover:text-orange-500">
                     {{ order._id.slice(-8) }}
                   </RouterLink>
                 </td>
@@ -228,7 +216,7 @@ onMounted(() => {
                 </td>
 
                 <td class="px-6 py-4">
-                  {{ order.items.reduce((total, item) => total + item.quantity, 0) }}
+                  {{order.items.reduce((total, item) => total + item.quantity, 0)}}
                 </td>
 
                 <td class="px-6 py-4">
@@ -248,24 +236,16 @@ onMounted(() => {
                 </td>
 
                 <td class="px-6 py-4">
-                  <select
-                    v-if="getAllowedStatuses(order.status).length > 0"
-                    :disabled="updatingOrderId === order._id"
-                    class="rounded-lg border px-3 py-2 text-sm"
-                    @change="
+                  <select v-if="getAllowedStatuses(order.status).length > 0" :disabled="updatingOrderId === order._id"
+                    class="rounded-lg border px-3 py-2 text-sm" @change="
                       handleStatusChange(
                         order,
                         ($event.target as HTMLSelectElement).value as OrderStatus,
                       )
-                    "
-                  >
+                      ">
                     <option value="">เปลี่ยนสถานะ</option>
 
-                    <option
-                      v-for="status in getAllowedStatuses(order.status)"
-                      :key="status"
-                      :value="status"
-                    >
+                    <option v-for="status in getAllowedStatuses(order.status)" :key="status" :value="status">
                       {{ getStatusLabel(status) }}
                     </option>
                   </select>

@@ -3,8 +3,8 @@
 
 <template>
   <main class="min-h-screen bg-gray-100 p-10">
-    <div class="mx-auto max-w-6xl rounded-2xl bg-white p-8 shadow-sm">
-      <h1 class="text-3xl font-bold text-gray-900">
+    <div class="mx-auto max-w-6xl rounded-xl bg-white p-8 shadow-sm">
+      <h1 class="text-xl font-bold text-gray-900">
         Shop Workshop
       </h1>
 

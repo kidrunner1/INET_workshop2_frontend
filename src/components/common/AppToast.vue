@@ -25,19 +25,13 @@ const toastClass = computed(() => {
   <div class="sr-only" role="alert" aria-atomic="true">
     {{ toastStore.isVisible && toastStore.type === 'error' ? toastStore.message : '' }}
   </div>
-  <Transition
-    enter-active-class="transition duration-200 motion-reduce:transition-none"
-    enter-from-class="translate-y-3 opacity-0"
-    enter-to-class="translate-y-0 opacity-100"
-    leave-active-class="transition duration-200 motion-reduce:transition-none"
-    leave-from-class="opacity-100"
-    leave-to-class="opacity-0"
-  >
-    <div
-      v-if="toastStore.isVisible"
-      class="fixed right-5 top-5 z-[100] w-[calc(100%-2.5rem)] max-w-sm rounded-2xl border p-4 shadow-lg"
-      :class="toastClass"
-    >
+  <Transition enter-active-class="transition duration-200 motion-reduce:transition-none"
+    enter-from-class="translate-y-3 opacity-0" enter-to-class="translate-y-0 opacity-100"
+    leave-active-class="transition duration-200 motion-reduce:transition-none" leave-from-class="opacity-100"
+    leave-to-class="opacity-0">
+    <div v-if="toastStore.isVisible"
+      class="fixed right-5 top-5 z-100 w-[calc(100%-2.5rem)] max-w-sm rounded-xl border p-4 shadow-lg"
+      :class="toastClass">
       <div class="flex items-start gap-3">
         <div class="flex-1">
           <p class="text-sm font-semibold">
@@ -55,13 +49,10 @@ const toastClass = computed(() => {
           </p>
         </div>
 
-        <button
-          type="button"
-          aria-label="ปิดการแจ้งเตือน"
+        <button type="button" aria-label="ปิดการแจ้งเตือน"
           class="cursor-pointer rounded px-2 text-lg opacity-60 hover:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2"
-          @click="toastStore.hide()"
-        >
-          ×
+          @click="toastStore.hide()">
+          <span class="material-symbols-rounded align-middle text-[20px]" aria-hidden="true">close</span>
         </button>
       </div>
     </div>
