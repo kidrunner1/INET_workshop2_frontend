@@ -1,0 +1,245 @@
+import { test, expect } from '@playwright/test'
+import { mockShop } from './fixtures'
+
+test('catalog deep link survives reload, detail, back and page-size changes', async ({ page }) => {
+  await mockShop(page)
+  await page.goto('/products?category=Mouse&page=2&sort=price-low')
+  await expect(page.locator('article')).toHaveCount(3)
+  await expect(page.getByLabel('หมวดหมู่', { exact: true })).toHaveValue('Mouse')
+  await expect(page.getByLabel('หน้า 2', { exact: true })).toHaveAttribute('aria-current', 'page')
+  await page
+    .getByRole('link', { name: /ดูรายละเอียด/ })
+    .first()
+    .click()
+  await expect(page).toHaveURL(/products\/[a-f0-9]+\?.*category=Mouse/)
+  await page.getByRole('link', { name: 'สินค้าทั้งหมด', exact: true }).click()
+  await expect(page.locator('article')).toHaveCount(3)
+  await page.reload()
+  await expect(page.locator('article')).toHaveCount(3)
+  await page.getByLabel('รายการต่อหน้า').selectOption('24')
+  await expect(page.locator('article')).toHaveCount(15)
+  await expect(page).toHaveURL(/limit=24/)
+  await page.goBack()
+  await expect(page.locator('article')).toHaveCount(3)
+})
+
+test('search clear cancels a pending debounce and ignores a slow old result', async ({ page }) => {
+  const state = await mockShop(page)
+  state.delaySearch = 'Mouse'
+  await page.goto('/products')
+  await expect(page.locator('article')).toHaveCount(12)
+  const search = page.getByLabel('ค้นหาสินค้า', { exact: true })
+  await search.fill('Mouse')
+  await page.getByRole('button', { name: 'ค้นหา', exact: true }).click()
+  await expect(page).toHaveURL(/search=Mouse/)
+  await search.fill('Keyboard')
+  await page.getByRole('button', { name: 'ค้นหา', exact: true }).click()
+  await expect(page.locator('article').first()).toContainText('Keyboard')
+  await page.waitForTimeout(900)
+  await expect(page.locator('article').first()).toContainText('Keyboard')
+  await search.fill('obsolete')
+  await page.getByRole('button', { name: 'ล้างคำค้นหา', exact: true }).click()
+  await expect(search).toBeFocused()
+  await expect(page.locator('article')).toHaveCount(12)
+  await page.waitForTimeout(400)
+  expect(state.requests.some((url) => url.includes('obsolete'))).toBe(false)
+  await expect(page).not.toHaveURL(/search=/)
+})
+
+test('IME composition does not submit incomplete text', async ({ page }) => {
+  const state = await mockShop(page)
+  await page.goto('/products')
+  await expect(page.locator('article')).toHaveCount(12)
+  const search = page.getByLabel('ค้นหาสินค้า', { exact: true })
+  await search.dispatchEvent('compositionstart')
+  await search.fill('Mouse')
+  await search.dispatchEvent('keydown', { key: 'Enter', isComposing: true })
+  await page.waitForTimeout(400)
+  expect(state.requests.some((url) => url.includes('search=Mouse'))).toBe(false)
+  await search.dispatchEvent('compositionend', { data: 'Mouse' })
+  await expect(page).toHaveURL(/search=Mouse/)
+  await expect(page.locator('article').first()).toContainText('Mouse')
+})
+
+test('empty, invalid pages, loading and retry have honest recoverable states', async ({ page }) => {
+  const state = await mockShop(page)
+  state.failProducts = 1
+  await page.goto('/products?page=999')
+  await expect(page.getByRole('heading', { name: 'โหลดสินค้าไม่สำเร็จ' })).toBeVisible()
+  await page.getByRole('button', { name: 'ลองใหม่', exact: true }).click()
+  await expect(page).toHaveURL(/page=3/)
+  await expect(page.locator('article')).toHaveCount(6)
+  await page.getByLabel('ค้นหาสินค้า', { exact: true }).fill('no matching product')
+  await page.getByRole('button', { name: 'ค้นหา', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'ไม่พบสินค้าที่ค้นหา' })).toBeVisible()
+  await expect(page.getByText('พบ 0 รายการ', { exact: true })).toBeVisible()
+  state.products = []
+  await page.getByRole('button', { name: 'ดูสินค้าทั้งหมด', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'ยังไม่มีสินค้าในร้าน' })).toBeVisible()
+  await expect(page.getByText('หน้า 1 จาก 0')).toHaveCount(0)
+})
+
+test('admin delete is cancel-first, recoverable and does not dispatch twice', async ({ page }) => {
+  const state = await mockShop(page, 'admin')
+  await page.goto('/admin/products')
+  const remove = page.getByRole('button', { name: 'ลบสินค้า', exact: true }).first()
+  await remove.click()
+  const dialog = page.getByRole('dialog')
+  await expect(dialog.getByRole('button', { name: 'เก็บสินค้าไว้' })).toBeFocused()
+  await page.keyboard.press('Escape')
+  await expect(dialog).not.toBeVisible()
+  await expect(remove).toBeFocused()
+  expect(state.writes).toHaveLength(0)
+  state.failDelete = 1
+  await remove.click()
+  await dialog.getByRole('button', { name: 'ลบสินค้า', exact: true }).click()
+  await expect(dialog.getByRole('alert')).toContainText('ลบสินค้าไม่สำเร็จ')
+  await dialog.getByRole('button', { name: 'ลบสินค้า', exact: true }).click()
+  await expect(dialog).not.toBeVisible()
+  await expect(page.getByRole('heading', { name: 'จัดการสินค้า', exact: true })).toBeFocused()
+  expect(await page.evaluate(() => document.documentElement.style.overflow)).toBe('')
+  expect(state.writes.filter((entry) => entry.startsWith('DELETE'))).toHaveLength(2)
+  expect(state.products).toHaveLength(29)
+})
+
+test('product create/edit validates, retains failed input, and refreshes the list', async ({
+  page,
+}) => {
+  const state = await mockShop(page, 'admin')
+  await page.goto('/admin/products')
+  await page.getByRole('button', { name: 'เพิ่มสินค้า', exact: true }).click()
+  const form = page.getByRole('form', { name: 'ข้อมูลสินค้า' })
+  await form.getByRole('button', { name: 'บันทึกสินค้า' }).click()
+  await expect(form.getByLabel('ชื่อสินค้า', { exact: true })).toBeFocused()
+  await expect(form.getByLabel('ชื่อสินค้า', { exact: true })).toHaveAttribute(
+    'aria-invalid',
+    'true',
+  )
+  expect(state.writes).toHaveLength(0)
+  await form.getByLabel('ชื่อสินค้า', { exact: true }).fill('New test mouse')
+  await form.getByLabel('ราคา (บาท)').fill('199.50')
+  await form.getByLabel('จำนวนคงเหลือ (ชิ้น)').fill('2')
+  state.failSave = 1
+  await form.getByRole('button', { name: 'บันทึกสินค้า' }).click()
+  await expect(page.getByText('บันทึกไม่สำเร็จ กรุณาลองอีกครั้ง').first()).toBeVisible()
+  await expect(form.getByLabel('ชื่อสินค้า', { exact: true })).toHaveValue('New test mouse')
+  await form.getByRole('button', { name: 'บันทึกสินค้า' }).click()
+  await expect(form).not.toBeVisible()
+  const row = page.getByRole('row').filter({ hasText: 'New test mouse' })
+  await expect(row).toBeVisible()
+  await row.getByRole('button', { name: 'แก้ไข', exact: true }).click()
+  await form.getByLabel('ชื่อสินค้า', { exact: true }).fill('Updated test mouse')
+  await form.getByRole('button', { name: 'บันทึกสินค้า' }).click()
+  await expect(form).not.toBeVisible()
+  await expect(page.getByRole('row').filter({ hasText: 'Updated test mouse' })).toBeVisible()
+  expect(state.products[0]?.price).toBe(199.5)
+})
+
+test('dirty product form can continue editing or explicitly discard', async ({ page }) => {
+  await mockShop(page, 'admin')
+  await page.goto('/admin/products')
+  await page.getByRole('button', { name: 'เพิ่มสินค้า', exact: true }).click()
+  const form = page.getByRole('form', { name: 'ข้อมูลสินค้า' })
+  await form.getByLabel('ชื่อสินค้า', { exact: true }).fill('Unsaved mouse')
+  await form.getByRole('button', { name: 'ยกเลิก', exact: true }).click()
+  const dialog = page.getByRole('dialog')
+  await dialog.getByRole('button', { name: 'แก้ไขต่อ' }).click()
+  await expect(form.getByLabel('ชื่อสินค้า', { exact: true })).toHaveValue('Unsaved mouse')
+  await form.getByRole('button', { name: 'ยกเลิก', exact: true }).click()
+  await dialog.getByRole('button', { name: 'ละทิ้งการแก้ไข', exact: true }).click()
+  await expect(form).not.toBeVisible()
+})
+
+test('user approval shares confirmation and failure recovery', async ({ page }) => {
+  const state = await mockShop(page, 'admin')
+  state.failApproval = 1
+  await page.goto('/admin/users')
+  await page.getByRole('button', { name: 'อนุมัติผู้ใช้', exact: true }).click()
+  const dialog = page.getByRole('dialog')
+  await expect(dialog.getByRole('button', { name: 'ยกเลิก' })).toBeFocused()
+  await dialog.getByRole('button', { name: 'อนุมัติผู้ใช้', exact: true }).click()
+  await expect(dialog.getByRole('alert')).toContainText('อนุมัติไม่สำเร็จ')
+  await dialog.getByRole('button', { name: 'อนุมัติผู้ใช้', exact: true }).click()
+  await expect(dialog).not.toBeVisible()
+  await expect(page.getByRole('button', { name: 'อนุมัติผู้ใช้', exact: true })).toHaveCount(0)
+})
+
+test('login preserves protected destination and unknown routes offer recovery', async ({
+  page,
+}) => {
+  await mockShop(page, 'guest')
+  await page.goto('/products?category=Mouse&page=2')
+  await expect(page).toHaveURL(/login\?redirect=/)
+  await page.getByLabel('Username', { exact: true }).fill('tester')
+  await page.getByLabel('Password', { exact: true }).fill('synthetic-password')
+  await page.getByRole('button', { name: 'เข้าสู่ระบบ', exact: true }).click()
+  await expect(page).toHaveURL(/products\?category=Mouse&page=2/)
+  await expect(page.locator('article')).toHaveCount(3)
+  await page.goto('/unknown-page')
+  await expect(page.getByRole('heading', { name: 'ไม่พบหน้านี้' })).toBeVisible()
+  await expect(page).toHaveTitle('ไม่พบหน้านี้ | ShopFlow')
+  await page.getByRole('link', { name: 'กลับหน้าหลัก', exact: true }).click()
+  await expect(page.locator('article')).toHaveCount(12)
+})
+
+test('catalog keyboard, responsive geometry and global accessibility styles', async ({
+  page,
+}, testInfo) => {
+  await mockShop(page)
+  await page.goto('/products')
+  await expect(page.locator('article')).toHaveCount(12)
+  const select = page.getByLabel('หมวดหมู่', { exact: true })
+  await select.focus()
+  await page.keyboard.press('ArrowDown')
+  await page.keyboard.press('Enter')
+  await expect(select).toHaveValue('Mouse')
+  await expect(page.locator('article').first()).toContainText('Mouse')
+  await expect(page.locator('html')).toHaveAttribute('lang', 'th')
+  await expect(page.getByRole('main')).toHaveCount(1)
+  const geometry = await page.evaluate(() => ({
+    overflow: document.documentElement.scrollWidth > window.innerWidth,
+    scrollbar: getComputedStyle(document.documentElement).scrollbarColor,
+    outline: getComputedStyle(document.activeElement!).outlineStyle,
+  }))
+  expect(geometry.overflow).toBe(false)
+  expect(geometry.scrollbar).not.toBe('auto')
+  expect(geometry.outline).not.toBe('none')
+  await page.screenshot({ path: testInfo.outputPath('catalog.png'), fullPage: true })
+  await page.screenshot({ path: testInfo.outputPath('catalog-viewport.png') })
+})
+
+test('route changes and logout confirm before discarding data or clearing the session', async ({
+  page,
+}) => {
+  await mockShop(page, 'admin')
+  await page.goto('/admin/products')
+  await page.getByRole('button', { name: 'เพิ่มสินค้า', exact: true }).click()
+  const form = page.getByRole('form', { name: 'ข้อมูลสินค้า' })
+  await form.getByLabel('ชื่อสินค้า', { exact: true }).fill('Unsaved route draft')
+  const menu = page.getByRole('button', { name: 'เปิดเมนู', exact: true })
+  if (await menu.isVisible()) await menu.click()
+  await page.getByRole('link', { name: /Users จัดการผู้ใช้งาน/ }).click()
+  const dialog = page.getByRole('dialog')
+  await expect(dialog).toBeVisible()
+  await dialog.getByRole('button', { name: 'แก้ไขต่อ' }).click()
+  await expect(page).toHaveURL(/admin\/products/)
+  await expect(form.getByLabel('ชื่อสินค้า', { exact: true })).toHaveValue('Unsaved route draft')
+  if (await menu.isVisible()) await menu.click()
+  await page.getByRole('button', { name: /Sign out/ }).click()
+  await expect(dialog).toBeVisible()
+  await dialog.getByRole('button', { name: 'แก้ไขต่อ' }).click()
+  expect(await page.evaluate(() => localStorage.getItem('token'))).toBe('synthetic-test-token')
+  await page.getByRole('button', { name: /Sign out/ }).click()
+  await dialog.getByRole('button', { name: 'ละทิ้งการแก้ไข', exact: true }).click()
+  await expect(page).toHaveURL(/\/login$/)
+  expect(await page.evaluate(() => localStorage.getItem('token'))).toBeNull()
+})
+
+test('external login return URLs cannot navigate away from the app', async ({ page }) => {
+  await mockShop(page, 'guest')
+  await page.goto('/login?redirect=https://example.com')
+  await page.getByLabel('Username', { exact: true }).fill('tester')
+  await page.getByLabel('Password', { exact: true }).fill('synthetic-password')
+  await page.getByRole('button', { name: 'เข้าสู่ระบบ', exact: true }).click()
+  await expect(page).toHaveURL('http://127.0.0.1:4173/products')
+})

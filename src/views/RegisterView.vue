@@ -1,168 +1,175 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-
+import { nextTick, reactive, ref } from 'vue'
+import { useRoute } from 'vue-router'
+import axios from 'axios'
 import { register } from '@/services/auth.service'
 import { useToastStore } from '@/stores/toast.store'
 import { getErrorMessage } from '@/utils/get-error-message'
 
 const toastStore = useToastStore()
-
-const username = ref('')
-const password = ref('')
+const route = useRoute()
+const formElement = ref<HTMLFormElement | null>(null)
+const form = reactive({
+  firstName: '', lastName: '', email: '', phone: '',
+  username: '', password: '', confirmPassword: '',
+})
+type Field = keyof typeof form
+const errors = ref<Partial<Record<Field, string>>>({})
 const showPassword = ref(false)
 const showConfirmPassword = ref(false)
-const confirmPassword = ref('')
-
 const isLoading = ref(false)
 const errorMessage = ref('')
 const successMessage = ref('')
-
+const profileFields = [
+  { key: 'firstName', label: 'ชื่อ', type: 'text', autocomplete: 'given-name', icon: 'person', max: 80, required: true },
+  { key: 'lastName', label: 'นามสกุล', type: 'text', autocomplete: 'family-name', icon: 'person', max: 80, required: true },
+  { key: 'email', label: 'อีเมล', type: 'email', autocomplete: 'email', icon: 'mail', max: 254, required: true },
+  { key: 'phone', label: 'เบอร์โทร (ไม่บังคับ)', type: 'tel', autocomplete: 'tel', icon: 'call', max: 30, required: false },
+] as const
+const accountFields = [
+  { key: 'username', label: 'ชื่อผู้ใช้สำหรับเข้าสู่ระบบ', autocomplete: 'username', icon: 'account_circle', max: 50 },
+  { key: 'password', label: 'รหัสผ่าน', autocomplete: 'new-password', icon: 'lock', max: 72 },
+  { key: 'confirmPassword', label: 'ยืนยันรหัสผ่าน', autocomplete: 'new-password', icon: 'lock_reset', max: 72 },
+] as const
 const steps = [
-  {
-    number: '01',
-    title: 'Create Account',
-    description: 'กรอก Username และ Password',
-  },
-  {
-    number: '02',
-    title: 'Wait for Approval',
-    description: 'รอ Admin ตรวจสอบและอนุมัติบัญชี',
-  },
-  {
-    number: '03',
-    title: 'Start Shopping',
-    description: 'เข้าสู่ระบบและเริ่มเลือกซื้อสินค้า',
-  },
+  { number: '01', title: 'กรอกข้อมูลผู้สมัคร', description: 'ระบุชื่อ อีเมล และตั้งข้อมูลเข้าสู่ระบบ', icon: 'person_add' },
+  { number: '02', title: 'รอแอดมินอนุมัติ', description: 'ดูสินค้าได้ระหว่างรอตรวจสอบบัญชี', icon: 'hourglass_top' },
+  { number: '03', title: 'เข้าสู่ระบบเพื่อซื้อสินค้า', description: 'เพิ่มลงตะกร้า สั่งซื้อ และติดตามออเดอร์', icon: 'shopping_bag' },
 ] as const
 
-const resetForm = (): void => {
-  username.value = ''
-  password.value = ''
-  confirmPassword.value = ''
+async function focusFirstError() {
+  await nextTick()
+  formElement.value?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus()
 }
-
-const handleRegister = async (): Promise<void> => {
+function resetForm() {
+  for (const key of Object.keys(form) as Field[]) form[key] = ''
+  showPassword.value = false
+  showConfirmPassword.value = false
+}
+async function handleRegister(): Promise<void> {
   if (isLoading.value) return
-
   errorMessage.value = ''
   successMessage.value = ''
-
-  const normalizedUsername = username.value.trim()
-
-  if (!normalizedUsername || !password.value || !confirmPassword.value) {
-    errorMessage.value = 'กรุณากรอกข้อมูลให้ครบ'
+  errors.value = {}
+  const payload = {
+    firstName: form.firstName.trim(), lastName: form.lastName.trim(),
+    email: form.email.trim().toLowerCase(), phone: form.phone.replace(/[\s()-]/g, ''),
+    username: form.username.trim(), password: form.password,
+  }
+  if (!payload.firstName || payload.firstName.length > 80) errors.value.firstName = 'กรอกชื่อ 1–80 ตัวอักษร'
+  if (!payload.lastName || payload.lastName.length > 80) errors.value.lastName = 'กรอกนามสกุล 1–80 ตัวอักษร'
+  if (payload.email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(payload.email))
+    errors.value.email = 'กรุณากรอกอีเมลให้ถูกต้อง'
+  if (payload.phone && !/^\+?[0-9]{8,15}$/.test(payload.phone))
+    errors.value.phone = 'เบอร์โทรต้องมี 8–15 หลัก ใส่ + รหัสประเทศได้'
+  if (payload.username.length < 3 || payload.username.length > 50)
+    errors.value.username = 'ชื่อผู้ใช้ต้องมี 3–50 ตัวอักษร'
+  if (payload.password.length < 8) errors.value.password = 'รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร'
+  else if (new TextEncoder().encode(payload.password).length > 72)
+    errors.value.password = 'รหัสผ่านยาวเกินไป กรุณาลดจำนวนตัวอักษรหรืออีโมจิ'
+  if (!form.confirmPassword || form.confirmPassword !== form.password)
+    errors.value.confirmPassword = 'กรุณายืนยันรหัสผ่านให้ตรงกัน'
+  if (Object.keys(errors.value).length) {
+    errorMessage.value = 'กรุณาตรวจสอบช่องที่ระบุ ก่อนสมัครสมาชิกอีกครั้ง'
+    await focusFirstError()
     return
   }
-
-  if (normalizedUsername.length < 3) {
-    errorMessage.value = 'Username ต้องมีอย่างน้อย 3 ตัวอักษร'
-    return
-  }
-
-  if (password.value.length < 6) {
-    errorMessage.value = 'Password ต้องมีอย่างน้อย 6 ตัวอักษร'
-    return
-  }
-
-  if (password.value !== confirmPassword.value) {
-    errorMessage.value = 'Password และ Confirm Password ไม่ตรงกัน'
-    return
-  }
-
   isLoading.value = true
-
   try {
-    await register({
-      username: normalizedUsername,
-      password: password.value,
-    })
-
-    successMessage.value =
-      'สร้างบัญชีสำเร็จ กรุณารอ Admin อนุมัติก่อนเข้าสู่ระบบ'
-
+    await register(payload)
+    successMessage.value = 'สร้างบัญชีสำเร็จ คุณดูสินค้าได้ทันที และเข้าสู่ระบบเพื่อซื้อสินค้าได้เมื่อ Admin อนุมัติบัญชีแล้ว'
     toastStore.success('สมัครสมาชิกสำเร็จ')
     resetForm()
   } catch (error) {
-    errorMessage.value = getErrorMessage(
-      error,
-      'สมัครสมาชิกไม่สำเร็จ',
-    )
-
+    if (axios.isAxiosError(error) && Array.isArray(error.response?.data?.data)) {
+      for (const issue of error.response.data.data) {
+        if (typeof issue?.field !== 'string' || typeof issue.message !== 'string') continue
+        const key = issue.field.replace(/^body\./, '') as Field
+        if (Object.prototype.hasOwnProperty.call(form, key)) errors.value[key] = issue.message
+      }
+    }
+    errorMessage.value = Object.keys(errors.value).length
+      ? 'กรุณาตรวจสอบช่องที่ระบุ ก่อนสมัครสมาชิกอีกครั้ง'
+      : getErrorMessage(error, 'สมัครสมาชิกไม่สำเร็จ กรุณาลองอีกครั้ง')
     toastStore.error(errorMessage.value)
   } finally {
     isLoading.value = false
   }
+  if (Object.keys(errors.value).length) await focusFirstError()
 }
 </script>
 
 <template>
   <main class="min-h-screen bg-slate-50 lg:grid lg:grid-cols-[1.05fr_0.95fr]">
-    <!-- Branding -->
-    <section
-      class="relative hidden overflow-hidden bg-slate-950 p-12 text-white lg:flex lg:flex-col lg:justify-between">
-      <!-- Background -->
-      <div class="absolute -right-24 -top-24 h-80 w-80 rounded-full" />
-
-      <div class="absolute -bottom-32 -left-20 h-96 w-96 rounded-full bg-orange-600/10 blur-xl" />
-
-      <!-- Logo -->
-      <div class="relative flex items-center gap-3">
-        <div class="flex h-9 w-9 items-center justify-center overflow-hidden rounded-xl">
-          <img src="/logo-app.png" alt="ShopFlow logo" class="h-full w-full object-cover" />
-        </div>
+    <!-- Registration guide -->
+    <aside
+      aria-labelledby="registration-guide-title"
+      class="hidden border-r border-slate-800 bg-slate-950 text-white lg:block"
+    >
+      <div class="registration-guide mx-auto flex max-w-xl flex-col gap-10 px-8 py-10 xl:gap-12 xl:px-12">
+        <RouterLink
+          :to="{ name: 'products' }"
+          aria-label="ShopFlow กลับไปดูสินค้า"
+          class="inline-flex min-h-11 w-fit items-center gap-3 rounded-xl focus-visible:outline-white"
+        >
+          <img src="/logo-app.png" alt="" width="44" height="44" class="h-11 w-11 rounded-xl  object-contain p-1" />
+          <div>
+            <p class="text-xl font-bold tracking-tight">ShopFlow<span class="text-orange-400">.</span></p>
+            <p class="mt-0.5 text-xs text-slate-400">อุปกรณ์ไอทีสำหรับคุณ</p>
+          </div>
+        </RouterLink>
 
         <div>
-          <h1 class="text-xl font-bold tracking-tight">
-            ShopFlow
-          </h1>
-
-          <p class="text-xs text-slate-400">
-            E-commerce Workshop
+          <p class="mb-4 flex items-center gap-2 text-sm font-medium text-orange-300">
+            <span aria-hidden="true" class="h-1.5 w-6 rounded-full bg-orange-400" />
+            เริ่มต้นใช้งาน ShopFlow
+          </p>
+          <h2 id="registration-guide-title" class="text-3xl font-bold leading-snug tracking-tight xl:text-4xl">
+            สร้างบัญชีของคุณ<br />
+            <span class="text-orange-400">พร้อมสำหรับการซื้อครั้งต่อไป</span>
+          </h2>
+          <p class="mt-5 max-w-md text-sm leading-7 text-slate-300">
+            กรอกข้อมูลในแบบฟอร์มเพื่อสมัครสมาชิก
+            เมื่อแอดมินอนุมัติแล้ว คุณจะเข้าสู่ระบบและสั่งซื้อสินค้าได้
           </p>
         </div>
-      </div>
 
-      <!-- Content -->
-      <div class="relative max-w-xl">
-        <p class="text-xs font-bold uppercase tracking-[0.25em] text-orange-400">
-          Start your journey
-        </p>
-
-        <h2 class="mt-5 max-w-xl text-5xl font-bold leading-[1.15] tracking-tight">
-          สร้างบัญชี
-          <span class="text-orange-500">
-            ShopFlow
-          </span>
-          และเริ่มช้อปได้ในไม่กี่ขั้นตอน
-        </h2>
-
-        <p class="mt-6 max-w-lg text-base leading-8 text-slate-400">
-          หลังสมัครสมาชิก บัญชีจะอยู่ในสถานะ Pending
-          และสามารถเข้าสู่ระบบได้หลังจาก Admin อนุมัติ
-        </p>
-
-        <!-- Steps -->
-        <div class="mt-10 space-y-3">
-          <div v-for="step in steps" :key="step.number"
-            class="group flex items-center gap-4 rounded-xl border border-white/10 bg-white/5 p-4 backdrop-blur transition hover:border-orange-500/30 hover:bg-white/10">
+        <ol aria-label="ขั้นตอนการสมัครสมาชิก" class="space-y-0">
+          <li
+            v-for="(step, index) in steps"
+            :key="step.number"
+            :aria-current="index === (successMessage ? 1 : 0) ? 'step' : undefined"
+            class="relative flex gap-4 pb-7 last:pb-0"
+          >
+            <span v-if="index < steps.length - 1" aria-hidden="true" class="absolute bottom-0 left-5.75 top-12 w-px bg-slate-700" />
             <div
-              class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/10 text-xs font-black text-orange-400">
-              {{ step.number }}
+              class="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border"
+              :class="index === (successMessage ? 1 : 0) ? 'border-orange-400/50 bg-orange-400/10 text-orange-300' : successMessage && index === 0 ? 'border-emerald-400/40 bg-emerald-400/10 text-emerald-300' : 'border-slate-700 bg-slate-900 text-slate-400'"
+            >
+              <span aria-hidden="true" class="material-symbols-rounded text-[23px]">{{ successMessage && index === 0 ? 'check' : step.icon }}</span>
             </div>
-
-            <div>
-              <p class="font-semibold text-white">
-                {{ step.title }}
+            <div class="min-w-0 pt-0.5">
+              <p class="text-sm font-semibold leading-6" :class="index === (successMessage ? 1 : 0) ? 'text-orange-200' : 'text-slate-100'">
+                <span class="mr-2 text-xs text-slate-400">{{ step.number }}</span>{{ step.title }}
               </p>
-
-              <p class="mt-1 text-sm text-slate-400">
-                {{ step.description }}
-              </p>
+              <p class="mt-1 text-sm leading-6 text-slate-400">{{ step.description }}</p>
             </div>
-          </div>
+          </li>
+        </ol>
+
+        <div class="border-t border-slate-800 pt-6">
+          <p class="text-sm leading-6 text-slate-300">ยังไม่พร้อมสมัคร? ดูสินค้าก่อนได้เลย</p>
+          <RouterLink
+            :to="{ name: 'products' }"
+            class="mt-3 inline-flex min-h-11 items-center gap-2 rounded-xl border border-slate-700 px-4 py-2 text-sm font-semibold text-white hover:border-orange-400 hover:bg-slate-900 focus-visible:outline-white"
+          >
+            <span aria-hidden="true" class="material-symbols-rounded text-xl">storefront</span>
+            ไปดูสินค้าทั้งหมด
+            <span aria-hidden="true" class="material-symbols-rounded text-lg">arrow_forward</span>
+          </RouterLink>
         </div>
       </div>
-    </section>
+    </aside>
 
     <!-- Register -->
     <section class="flex min-h-screen items-center justify-center px-6 py-12 sm:px-10 lg:min-h-0">
@@ -170,215 +177,140 @@ const handleRegister = async (): Promise<void> => {
         <!-- Mobile Logo -->
         <div class="mb-10 flex items-center gap-3 lg:hidden">
           <div
-            class="flex h-11 w-11 items-center justify-center rounded-xl bg-orange-500 text-lg font-black text-white">
+            class="flex h-11 w-11 items-center justify-center rounded-xl bg-orange-500 text-lg font-black text-white"
+          >
             S
           </div>
 
           <div>
-            <h1 class="font-bold text-slate-900">
-              ShopFlow
-            </h1>
+            <h1 class="font-bold text-slate-900">ShopFlow</h1>
 
-            <p class="text-xs text-slate-400">
-              E-commerce Workshop
-            </p>
+            <p class="text-xs text-slate-400">E-commerce Workshop</p>
           </div>
         </div>
 
         <!-- Heading -->
         <div class="mb-8">
-          <p class="text-sm font-semibold text-orange-500">
-            Create account
-          </p>
+          <p class="text-sm font-semibold text-orange-500">Create account</p>
 
-          <h2 class="mt-2 text-xl font-bold tracking-tight text-slate-950">
-            สมัครสมาชิก
-          </h2>
+          <h2 class="mt-2 text-xl font-bold tracking-tight text-slate-950">สมัครสมาชิก</h2>
 
           <p class="mt-2 text-sm leading-6 text-slate-500">
-            สร้างบัญชีเพื่อเริ่มเลือกซื้อสินค้า
-            และใช้งานระบบ ShopFlow
+            สร้างบัญชีเพื่อเริ่มเลือกซื้อสินค้า และใช้งานระบบ ShopFlow
           </p>
         </div>
 
         <!-- Form -->
-        <form class="space-y-5" @submit.prevent="handleRegister">
-          <!-- Username -->
-          <div class="group relative">
-            <span
-              class="material-symbols-rounded pointer-events-none absolute left-4 top-1/2 z-10 -translate-y-1/2 text-[21px] text-slate-400 transition group-focus-within:text-orange-500">
-              person
-            </span>
-
-            <input id="username" v-model="username" type="text" autocomplete="username" placeholder=" "
-              class="peer h-14 w-full rounded-xl border border-slate-200 bg-white pl-12 pr-4 pt-1 text-sm font-medium text-slate-900 outline-none transition hover:border-slate-300 focus:border-orange-400 focus:ring-4 focus:ring-orange-100" />
-
-            <label for="username" class="pointer-events-none absolute left-11 top-1/2 -translate-y-1/2 bg-white px-1.5 text-sm font-medium text-slate-400 transition-all duration-200
-        peer-focus:left-3
-        peer-focus:top-0
-        peer-focus:text-xs
-        peer-focus:font-semibold
-        peer-focus:text-orange-500
-        peer-not-placeholder-shown:left-3
-        peer-not-placeholder-shown:top-0
-        peer-not-placeholder-shown:text-xs
-        peer-not-placeholder-shown:font-semibold">
-              Username
-            </label>
-          </div>
-
-          <!-- Password -->
-          <div class="group relative">
-            <span
-              class="material-symbols-rounded pointer-events-none absolute left-4 top-1/2 z-10 -translate-y-1/2 text-[21px] text-slate-400 transition group-focus-within:text-orange-500">
-              lock
-            </span>
-
-            <input id="password" v-model="password" :type="showPassword ? 'text' : 'password'"
-              autocomplete="new-password" placeholder=" "
-              class="peer h-14 w-full rounded-xl border border-slate-200 bg-white pl-12 pr-12 pt-1 text-sm font-medium text-slate-900 outline-none transition hover:border-slate-300 focus:border-orange-400 focus:ring-4 focus:ring-orange-100" />
-
-            <label for="password" class="pointer-events-none absolute left-11 top-1/2 -translate-y-1/2 bg-white px-1.5 text-sm font-medium text-slate-400 transition-all duration-200
-        peer-focus:left-3
-        peer-focus:top-0
-        peer-focus:text-xs
-        peer-focus:font-semibold
-        peer-focus:text-orange-500
-        peer-not-placeholder-shown:left-3
-        peer-not-placeholder-shown:top-0
-        peer-not-placeholder-shown:text-xs
-        peer-not-placeholder-shown:font-semibold">
-              Password
-            </label>
-
-            <button type="button"
-              class="absolute right-3 top-1/2 z-10 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 focus:outline-none focus:ring-2 focus:ring-orange-100"
-              :aria-label="showPassword
-                ? 'ซ่อน Password'
-                : 'แสดง Password'
-                " @click="showPassword = !showPassword">
-              <span class="material-symbols-rounded text-[21px]">
-                {{
-                  showPassword
-                    ? 'visibility_off'
-                    : 'visibility'
-                }}
-              </span>
-            </button>
-          </div>
-
-          <!-- Confirm Password -->
-          <div class="group relative">
-            <span
-              class="material-symbols-rounded pointer-events-none absolute left-4 top-1/2 z-10 -translate-y-1/2 text-[21px] text-slate-400 transition group-focus-within:text-orange-500">
-              lock_reset
-            </span>
-
-            <input id="confirm-password" v-model="confirmPassword" :type="showConfirmPassword
-              ? 'text'
-              : 'password'
-              " autocomplete="new-password" placeholder=" "
-              class="peer h-14 w-full rounded-xl border border-slate-200 bg-white pl-12 pr-12 pt-1 text-sm font-medium text-slate-900 outline-none transition hover:border-slate-300 focus:border-orange-400 focus:ring-4 focus:ring-orange-100" />
-
-            <label for="confirm-password" class="pointer-events-none absolute left-11 top-1/2 -translate-y-1/2 bg-white px-1.5 text-sm font-medium text-slate-400 transition-all duration-200
-        peer-focus:left-3
-        peer-focus:top-0
-        peer-focus:text-xs
-        peer-focus:font-semibold
-        peer-focus:text-orange-500
-        peer-not-placeholder-shown:left-3
-        peer-not-placeholder-shown:top-0
-        peer-not-placeholder-shown:text-xs
-        peer-not-placeholder-shown:font-semibold">
-              Confirm Password
-            </label>
-
-            <button type="button"
-              class="absolute right-3 top-1/2 z-10 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 focus:outline-none focus:ring-2 focus:ring-orange-100"
-              :aria-label="showConfirmPassword
-                ? 'ซ่อน Confirm Password'
-                : 'แสดง Confirm Password'
-                " @click="
-                  showConfirmPassword =
-                  !showConfirmPassword
-                  ">
-              <span class="material-symbols-rounded text-[21px]">
-                {{
-                  showConfirmPassword
-                    ? 'visibility_off'
-                    : 'visibility'
-                }}
-              </span>
-            </button>
-          </div>
-
-          <!-- Error -->
-          <div v-if="errorMessage" role="alert"
-            class="flex items-start gap-2 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600">
-            <span class="material-symbols-rounded mt-0.5 text-[19px]">
-              error
-            </span>
-
-            <span>
-              {{ errorMessage }}
-            </span>
-          </div>
-
-          <!-- Success -->
-          <div v-if="successMessage" role="status" class="rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-4">
-            <div class="flex gap-3">
-              <div
-                class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
-                <span class="material-symbols-rounded text-[21px]">
-                  check_circle
-                </span>
-              </div>
-
-              <div>
-                <p class="text-sm font-bold text-emerald-700">
-                  สมัครสมาชิกสำเร็จ
-                </p>
-
-                <p class="mt-1 text-sm leading-6 text-emerald-600">
-                  {{ successMessage }}
-                </p>
+        <form ref="formElement" novalidate :aria-busy="isLoading" class="space-y-5" @submit.prevent="handleRegister">
+          <p v-if="errorMessage" role="alert" class="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+            {{ errorMessage }}
+          </p>
+          <fieldset :disabled="isLoading" class="space-y-5">
+            <legend class="mb-4 text-base font-semibold text-slate-900">ข้อมูลผู้สมัคร</legend>
+            <p class="text-sm leading-6 text-slate-500">ใช้เป็นข้อมูลบัญชีให้แอดมินตรวจสอบ กรุณากรอกทุกช่องยกเว้นเบอร์โทร</p>
+            <div class="grid gap-4 sm:grid-cols-2">
+              <div v-for="field in profileFields" :key="field.key" :class="{ 'sm:col-span-2': field.key === 'email' || field.key === 'phone' }">
+                <label :for="'register-' + field.key" class="mb-2 block text-sm font-semibold text-slate-700">{{ field.label }}</label>
+                <div class="relative">
+                  <span aria-hidden="true" class="material-symbols-rounded pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xl text-slate-400">{{ field.icon }}</span>
+                  <input
+                    :id="'register-' + field.key"
+                    v-model="form[field.key]"
+                    :type="field.type"
+                    :name="field.key"
+                    :autocomplete="field.autocomplete"
+                    :maxlength="field.max"
+                    :required="field.required"
+                    :aria-invalid="Boolean(errors[field.key])"
+                    :aria-describedby="errors[field.key] ? 'register-' + field.key + '-error' : field.key === 'phone' ? 'register-phone-help' : undefined"
+                    class="app-field min-h-12 w-full py-3 pl-10 pr-3 disabled:bg-slate-100"
+                    @input="errors[field.key] = undefined"
+                  />
+                </div>
+                <p v-if="errors[field.key]" :id="'register-' + field.key + '-error'" class="mt-2 text-sm text-red-700">{{ errors[field.key] }}</p>
+                <p v-else-if="field.key === 'phone'" id="register-phone-help" class="mt-2 text-xs leading-5 text-slate-500">8–15 หลัก ใส่ + รหัสประเทศได้ เช่น +66812345678</p>
               </div>
             </div>
+          </fieldset>
+          <fieldset :disabled="isLoading" class="space-y-4 border-t border-slate-200 pt-5">
+            <legend class="px-1 text-base font-semibold text-slate-900">ข้อมูลเข้าสู่ระบบ</legend>
+            <div v-for="field in accountFields" :key="field.key">
+              <label :for="'register-' + field.key" class="mb-2 block text-sm font-semibold text-slate-700">{{ field.label }}</label>
+              <div class="relative">
+                <span aria-hidden="true" class="material-symbols-rounded pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xl text-slate-400">{{ field.icon }}</span>
+                <input
+                  :id="'register-' + field.key"
+                  v-model="form[field.key]"
+                  :name="field.key"
+                  :type="field.key === 'username' || (field.key === 'password' ? showPassword : showConfirmPassword) ? 'text' : 'password'"
+                  :autocomplete="field.autocomplete"
+                  :maxlength="field.max"
+                  required
+                  :aria-invalid="Boolean(errors[field.key])"
+                  :aria-describedby="errors[field.key] ? 'register-' + field.key + '-error' : field.key === 'password' ? 'register-password-help' : undefined"
+                  class="app-field min-h-12 w-full py-3 pl-10 pr-12 disabled:bg-slate-100"
+                  @input="errors[field.key] = undefined"
+                />
+                <button
+                  v-if="field.key !== 'username'"
+                  type="button"
+                  :aria-label="(field.key === 'password' ? showPassword : showConfirmPassword) ? 'ซ่อน' + field.label : 'แสดง' + field.label"
+                  :aria-pressed="field.key === 'password' ? showPassword : showConfirmPassword"
+                  class="absolute right-1 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100"
+                  @click="field.key === 'password' ? showPassword = !showPassword : showConfirmPassword = !showConfirmPassword"
+                >
+                  <span aria-hidden="true" class="material-symbols-rounded text-xl">{{ (field.key === 'password' ? showPassword : showConfirmPassword) ? 'visibility_off' : 'visibility' }}</span>
+                </button>
+              </div>
+              <p v-if="errors[field.key]" :id="'register-' + field.key + '-error'" class="mt-2 text-sm text-red-700">{{ errors[field.key] }}</p>
+              <p v-else-if="field.key === 'password'" id="register-password-help" class="mt-2 text-xs leading-5 text-slate-500">อย่างน้อย 8 ตัวอักษร ใช้ตัวอักษร ตัวเลข หรือสัญลักษณ์ร่วมกัน</p>
+            </div>
+          </fieldset>
+          <div v-if="successMessage" role="status" class="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm leading-6 text-emerald-800">
+            <p class="font-semibold">สมัครสมาชิกสำเร็จ</p>
+            <p class="mt-1">{{ successMessage }}</p>
           </div>
-
-          <!-- Submit -->
-          <button type="submit" :disabled="isLoading"
-            class="flex w-full items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 py-3.5 font-semibold text-white shadow-lg shadow-slate-200 transition hover:-translate-y-0.5 hover:bg-orange-500 hover:shadow-orange-100 disabled:cursor-not-allowed disabled:translate-y-0 disabled:opacity-50">
-            <span class="material-symbols-rounded text-[20px]" :class="{
-              'animate-spin': isLoading,
-            }">
-              {{
-                isLoading
-                  ? 'progress_activity'
-                  : 'person_add'
-              }}
-            </span>
-
-            {{
-              isLoading
-                ? 'กำลังสร้างบัญชี...'
-                : 'สร้างบัญชี'
-            }}
+          <button
+            type="submit"
+            :disabled="isLoading"
+            class="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 py-3.5 font-semibold text-white hover:bg-orange-600 disabled:opacity-50"
+          >
+            <span aria-hidden="true" class="material-symbols-rounded text-xl" :class="{ 'animate-spin': isLoading }">{{ isLoading ? 'progress_activity' : 'person_add' }}</span>
+            {{ isLoading ? 'กำลังสร้างบัญชี...' : 'สร้างบัญชี' }}
           </button>
         </form>
 
         <!-- Login -->
         <div class="mt-8 border-t border-slate-200 pt-6 text-center">
-          <p class="text-sm text-slate-500">
-            มีบัญชีอยู่แล้ว?
-          </p>
+          <p class="text-sm text-slate-500">มีบัญชีอยู่แล้ว?</p>
 
-          <RouterLink :to="{ name: 'login' }"
-            class="mt-3 inline-flex items-center justify-center rounded-xl px-4 py-2 text-sm font-semibold text-orange-600 transition hover:bg-orange-50">
-            กลับไปเข้าสู่ระบบ <span class="material-symbols-rounded align-middle text-[18px]" aria-hidden="true">arrow_forward</span>
+          <RouterLink
+            :to="{ name: 'login', query: { redirect: route.query.redirect } }"
+            class="mt-3 inline-flex items-center justify-center rounded-xl px-4 py-2 text-sm font-semibold text-orange-600 transition hover:bg-orange-50"
+          >
+            กลับไปเข้าสู่ระบบ
+            <span class="material-symbols-rounded align-middle text-[18px]" aria-hidden="true"
+              >arrow_forward</span
+            >
           </RouterLink>
+          <RouterLink
+            :to="{ name: 'products' }"
+            class="mt-2 block rounded-xl px-4 py-3 text-sm font-medium text-slate-600 hover:bg-slate-100"
+          >ดูสินค้าระหว่างรออนุมัติ</RouterLink>
         </div>
       </div>
     </section>
   </main>
 </template>
+
+
+<style scoped>
+/* Short windows use document scrolling; tall desktops keep the guide in view. */
+@media (min-width: 1024px) and (min-height: 900px) {
+  .registration-guide {
+    position: sticky;
+    top: 0;
+  }
+}
+</style>
+

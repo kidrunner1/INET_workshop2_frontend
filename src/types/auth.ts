@@ -11,6 +11,10 @@ export type UserStatus =
 export interface User {
   _id: string
   username: string
+  firstName?: string
+  lastName?: string
+  email?: string
+  phone?: string
   role: UserRole
   status: UserStatus
 }
@@ -21,6 +25,10 @@ export interface UserWithTimestamps extends User {
 }
 
 export interface RegisterRequest {
+  firstName: string
+  lastName: string
+  email: string
+  phone?: string
   username: string
   password: string
 }

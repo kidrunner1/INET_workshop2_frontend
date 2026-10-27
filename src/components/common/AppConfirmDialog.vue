@@ -1,11 +1,5 @@
 <script setup lang="ts">
-import {
-  nextTick,
-  onBeforeUnmount,
-  ref,
-  useId,
-  watch,
-} from 'vue'
+import { nextTick, onBeforeUnmount, ref, useId, watch } from 'vue'
 
 const props = withDefaults(
   defineProps<{
@@ -37,8 +31,7 @@ const emit = defineEmits<{
 
 const dialog = ref<HTMLDialogElement | null>(null)
 
-const cancelButton =
-  ref<HTMLButtonElement | null>(null)
+const cancelButton = ref<HTMLButtonElement | null>(null)
 
 const titleId = useId()
 const descriptionId = useId()
@@ -49,8 +42,7 @@ let previousOverflow: string | null = null
 const restorePage = (): void => {
   if (previousOverflow === null) return
 
-  document.documentElement.style.overflow =
-    previousOverflow
+  document.documentElement.style.overflow = previousOverflow
 
   previousOverflow = null
 }
@@ -62,15 +54,12 @@ const requestCancel = (): void => {
 }
 
 const handleClose = (): void => {
+  // A queued close event from the previous opening must not cancel a new dialog.
+  if (dialog.value?.open) return
+
   restorePage()
 
-  if (props.open) {
-    emit('cancel')
-  }
-
-  const target = opener?.isConnected
-    ? opener
-    : props.fallbackFocus
+  const target = opener?.isConnected ? opener : props.fallbackFocus
 
   target?.focus({
     preventScroll: true,
@@ -82,27 +71,16 @@ watch(
   async (open) => {
     await nextTick()
 
-    if (
-      open !== props.open ||
-      !dialog.value
-    ) {
+    if (open !== props.open || !dialog.value) {
       return
     }
 
-    if (
-      open &&
-      !dialog.value.open
-    ) {
-      opener =
-        document.activeElement instanceof HTMLElement
-          ? document.activeElement
-          : null
+    if (open && !dialog.value.open) {
+      opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
 
-      previousOverflow =
-        document.documentElement.style.overflow
+      previousOverflow = document.documentElement.style.overflow
 
-      document.documentElement.style.overflow =
-        'hidden'
+      document.documentElement.style.overflow = 'hidden'
 
       dialog.value.showModal()
 
@@ -111,10 +89,9 @@ watch(
       return
     }
 
-    if (
-      !open &&
-      dialog.value.open
-    ) {
+    if (!open && dialog.value.open) {
+      // Restore synchronously so reopening before the close event keeps the original value.
+      restorePage()
       dialog.value.close()
     }
   },
@@ -128,20 +105,23 @@ onBeforeUnmount(restorePage)
 
 <template>
   <Teleport to="body">
-    <dialog ref="dialog" :aria-labelledby="titleId" :aria-describedby="descriptionId" :aria-busy="busy"
+    <dialog
+      ref="dialog"
+      :aria-labelledby="titleId"
+      :aria-describedby="descriptionId"
+      :aria-busy="busy"
       class="m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-md overflow-y-auto rounded-2xl border border-slate-200 bg-white p-6 text-slate-900 shadow-2xl backdrop:bg-slate-950/40 backdrop:backdrop-blur-sm sm:p-8"
-      @cancel.prevent="requestCancel" @close="handleClose">
+      @cancel.prevent="requestCancel"
+      @close="handleClose"
+    >
       <!-- Icon -->
-      <div aria-hidden="true" class="mb-5 flex h-12 w-12 items-center justify-center rounded-2xl" :class="intent === 'danger'
-          ? 'bg-red-50 text-red-600'
-          : 'bg-orange-50 text-orange-600'
-        ">
-        <span class="material-symbols-rounded text-[26px]">
-          {{
-            intent === 'danger'
-              ? 'delete'
-              : 'shopping_bag'
-          }}
+      <div
+        aria-hidden="true"
+        class="mb-5 flex h-12 w-12 items-center justify-center rounded-2xl"
+        :class="intent === 'danger' ? 'bg-red-50 text-red-600' : 'bg-orange-50 text-orange-600'"
+      >
+        <span aria-hidden="true" class="material-symbols-rounded text-[26px]">
+          {{ intent === 'danger' ? 'delete' : 'shopping_bag' }}
         </span>
       </div>
 
@@ -155,11 +135,12 @@ onBeforeUnmount(restorePage)
       </p>
 
       <!-- Error -->
-      <div v-if="error" role="alert"
-        class="mt-4 flex items-start gap-2 rounded-xl border border-red-100 bg-red-50 p-3 text-sm text-red-600">
-        <span class="material-symbols-rounded mt-0.5 text-[18px]">
-          error
-        </span>
+      <div
+        v-if="error"
+        role="alert"
+        class="mt-4 flex items-start gap-2 rounded-xl border border-red-100 bg-red-50 p-3 text-sm text-red-600"
+      >
+        <span aria-hidden="true" class="material-symbols-rounded mt-0.5 text-[18px]"> error </span>
 
         <span>
           {{ error }}
@@ -169,43 +150,41 @@ onBeforeUnmount(restorePage)
       <!-- Actions -->
       <div class="mt-6 flex flex-col-reverse gap-3 sm:flex-row">
         <!-- Cancel -->
-        <button ref="cancelButton" type="button" :disabled="busy"
+        <button
+          ref="cancelButton"
+          type="button"
+          :disabled="busy"
           class="flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 active:bg-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-500 disabled:cursor-not-allowed disabled:opacity-50"
-          @click="requestCancel">
-          <span class="material-symbols-rounded text-[18px]">
-            close
-          </span>
+          @click="requestCancel"
+        >
+          <span aria-hidden="true" class="material-symbols-rounded text-[18px]"> close </span>
 
           {{ cancelLabel }}
         </button>
 
         <!-- Confirm -->
-        <button type="button" :disabled="busy"
+        <button
+          type="button"
+          :disabled="busy"
           class="flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold text-white transition focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-          :class="intent === 'danger'
+          :class="
+            intent === 'danger'
               ? 'bg-red-600 hover:bg-red-700 active:bg-red-800 focus-visible:outline-red-600'
               : 'bg-orange-500 hover:bg-orange-600 active:bg-orange-700 focus-visible:outline-orange-500'
-            " @click="
-            !busy &&
-            emit('confirm')
-            ">
-          <span class="material-symbols-rounded text-[19px]" :class="{
-            'animate-spin': busy,
-          }">
-            {{
-              busy
-                ? 'progress_activity'
-                : intent === 'danger'
-                  ? 'delete'
-                  : 'check_circle'
-            }}
+          "
+          @click="!busy && emit('confirm')"
+        >
+          <span
+            aria-hidden="true"
+            class="material-symbols-rounded text-[19px]"
+            :class="{
+              'animate-spin': busy,
+            }"
+          >
+            {{ busy ? 'progress_activity' : intent === 'danger' ? 'delete' : 'check_circle' }}
           </span>
 
-          {{
-            busy
-              ? busyLabel
-              : confirmLabel
-          }}
+          {{ busy ? busyLabel : confirmLabel }}
         </button>
       </div>
     </dialog>

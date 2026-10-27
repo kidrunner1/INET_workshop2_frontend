@@ -3,6 +3,8 @@ import { withMinimumLoading } from '@/utils/with-minimum-loading'
 
 import { useToastStore } from '@/stores/toast.store'
 
+import AppConfirmDialog from '@/components/common/AppConfirmDialog.vue'
+import AppSearchField from '@/components/common/AppSearchField.vue'
 import AppSkeleton from '@/components/common/AppSkeleton.vue'
 import PageSkeleton from '@/components/common/PageSkeleton.vue'
 import { computed, onMounted, ref } from 'vue'
@@ -23,6 +25,16 @@ const approvingUserId = ref<string | null>(null)
 const errorMessage = ref('')
 const successMessage = ref('')
 const search = ref('')
+const pendingApproval = ref<AdminUser | null>(null)
+const approvalError = ref('')
+const listHeading = ref<HTMLElement | null>(null)
+const requestApproval = (user: AdminUser) => {
+  approvalError.value = ''
+  pendingApproval.value = user
+}
+const cancelApproval = () => {
+  if (!approvingUserId.value) pendingApproval.value = null
+}
 
 const fetchUsers = async () => {
   try {
@@ -52,7 +64,10 @@ const filteredUsers = computed(() => {
     return users.value
   }
 
-  return users.value.filter((user) => user.username.toLowerCase().includes(keyword))
+  return users.value.filter((user) =>
+    [user.username, [user.firstName, user.lastName].filter(Boolean).join(' '), user.email, user.phone]
+      .some((value) => value?.toLowerCase().includes(keyword)),
+  )
 })
 
 const totalUsers = computed(() => users.value.length)
@@ -63,10 +78,10 @@ const approvedUsers = computed(
   () => users.value.filter((user) => user.status === 'approved').length,
 )
 
-const handleApprove = async (user: AdminUser) => {
-  const confirmed = window.confirm(`อนุมัติผู้ใช้ "${user.username}" หรือไม่?`)
-
-  if (!confirmed) return
+const confirmApproval = async () => {
+  const user = pendingApproval.value
+  if (!user || approvingUserId.value) return
+  approvalError.value = ''
 
   try {
     approvingUserId.value = user._id
@@ -84,6 +99,7 @@ const handleApprove = async (user: AdminUser) => {
 
     successMessage.value = `อนุมัติ ${user.username} สำเร็จ`
     toastStore.success(successMessage.value)
+    pendingApproval.value = null
   } catch (error) {
     if (axios.isAxiosError(error)) {
       errorMessage.value = error.response?.data?.message ?? 'Approve ไม่สำเร็จ'
@@ -91,7 +107,7 @@ const handleApprove = async (user: AdminUser) => {
       errorMessage.value = 'เกิดข้อผิดพลาด กรุณาลองอีกครั้ง'
     }
 
-    toastStore.error(errorMessage.value)
+    approvalError.value = errorMessage.value
   } finally {
     approvingUserId.value = null
   }
@@ -107,14 +123,19 @@ onMounted(() => {
 <template>
   <section class="px-5 py-6 sm:px-8 sm:py-8">
     <div class="mx-auto max-w-7xl">
+      <h1 ref="listHeading" tabindex="-1" class="mb-5 text-2xl font-bold text-slate-900">
+        จัดการผู้ใช้งาน
+      </h1>
       <!-- Summary -->
       <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         <div class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
           <p class="text-sm font-medium text-slate-500">Users ทั้งหมด</p>
 
           <p class="mt-3 text-xl font-bold text-slate-900">
-            <AppSkeleton v-if="isLoading" class="inline-block h-[1em] w-16 align-middle" /><span v-else>{{ totalUsers
-            }}</span>
+            <AppSkeleton v-if="isLoading" class="inline-block h-[1em] w-16 align-middle" /><span
+              v-else
+              >{{ totalUsers }}</span
+            >
           </p>
 
           <p class="mt-1 text-sm text-slate-400">บัญชีในระบบทั้งหมด</p>
@@ -124,8 +145,10 @@ onMounted(() => {
           <p class="text-sm font-medium text-slate-500">รออนุมัติ</p>
 
           <p class="mt-3 text-xl font-bold text-orange-500">
-            <AppSkeleton v-if="isLoading" class="inline-block h-[1em] w-16 align-middle" /><span v-else>{{ pendingUsers
-            }}</span>
+            <AppSkeleton v-if="isLoading" class="inline-block h-[1em] w-16 align-middle" /><span
+              v-else
+              >{{ pendingUsers }}</span
+            >
           </p>
 
           <p class="mt-1 text-sm text-slate-400">บัญชีที่ต้องตรวจสอบ</p>
@@ -135,8 +158,10 @@ onMounted(() => {
           <p class="text-sm font-medium text-slate-500">อนุมัติแล้ว</p>
 
           <p class="mt-3 text-xl font-bold text-green-600">
-            <AppSkeleton v-if="isLoading" class="inline-block h-[1em] w-16 align-middle" /><span v-else>{{ approvedUsers
-            }}</span>
+            <AppSkeleton v-if="isLoading" class="inline-block h-[1em] w-16 align-middle" /><span
+              v-else
+              >{{ approvedUsers }}</span
+            >
           </p>
 
           <p class="mt-1 text-sm text-slate-400">สามารถเข้าสู่ระบบได้</p>
@@ -145,16 +170,25 @@ onMounted(() => {
 
       <!-- Search -->
       <div class="mt-6 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-        <input v-model="search" type="text" placeholder="ค้นหา Username..."
-          class="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-orange-500 focus:bg-white focus:ring-4 focus:ring-orange-100" />
+        <AppSearchField
+          v-model="search"
+          label="ค้นหาผู้ใช้งาน"
+          placeholder="ชื่อผู้ใช้ ชื่อ–นามสกุล อีเมล หรือเบอร์โทร"
+          :debounce-ms="0"
+        />
       </div>
 
-      <div v-if="successMessage"
-        class="mt-5 rounded-xl border border-green-100 bg-green-50 px-4 py-3 text-sm text-green-700">
+      <div
+        v-if="successMessage"
+        class="mt-5 rounded-xl border border-green-100 bg-green-50 px-4 py-3 text-sm text-green-700"
+      >
         {{ successMessage }}
       </div>
 
-      <div v-if="errorMessage" class="mt-5 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600">
+      <div
+        v-if="errorMessage"
+        class="mt-5 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600"
+      >
         {{ errorMessage }}
       </div>
 
@@ -172,6 +206,8 @@ onMounted(() => {
               <tr class="text-xs font-semibold uppercase tracking-wide text-slate-500">
                 <th class="px-6 py-4">User</th>
 
+                <th class="px-6 py-4">ข้อมูลติดต่อ</th>
+
                 <th class="px-6 py-4">Role</th>
 
                 <th class="px-6 py-4">Status</th>
@@ -183,11 +219,16 @@ onMounted(() => {
             </thead>
 
             <tbody class="divide-y divide-slate-100">
-              <tr v-for="user in filteredUsers" :key="user._id" class="transition hover:bg-slate-50/70">
+              <tr
+                v-for="user in filteredUsers"
+                :key="user._id"
+                class="transition hover:bg-slate-50/70"
+              >
                 <td class="px-6 py-4">
                   <div class="flex items-center gap-3">
                     <div
-                      class="flex h-10 w-10 items-center justify-center rounded-xl bg-orange-50 font-bold text-orange-600">
+                      class="flex h-10 w-10 items-center justify-center rounded-xl bg-orange-50 font-bold text-orange-600"
+                    >
                       {{ user.username.charAt(0).toUpperCase() }}
                     </div>
 
@@ -197,23 +238,34 @@ onMounted(() => {
                       </p>
 
                       <p class="mt-0.5 text-xs text-slate-400">
-                        {{ user._id }}
+                        {{ [user.firstName, user.lastName].filter(Boolean).join(' ') || 'ยังไม่ได้ระบุชื่อ–นามสกุล' }}
                       </p>
                     </div>
                   </div>
                 </td>
 
+                <td class="px-6 py-4 text-sm text-slate-600">
+                  <p class="max-w-64 break-words">{{ user.email || 'ยังไม่ได้ระบุอีเมล' }}</p>
+                  <p class="mt-1 text-xs text-slate-500">{{ user.phone || 'ไม่ระบุเบอร์โทร' }}</p>
+                </td>
+
                 <td class="px-6 py-4">
-                  <span class="rounded-lg bg-slate-100 px-3 py-1 text-sm font-medium text-slate-600">
+                  <span
+                    class="rounded-lg bg-slate-100 px-3 py-1 text-sm font-medium text-slate-600"
+                  >
                     {{ user.role }}
                   </span>
                 </td>
 
                 <td class="px-6 py-4">
-                  <span class="rounded-full px-3 py-1.5 text-xs font-semibold" :class="user.status === 'approved'
-                    ? 'bg-green-50 text-green-700'
-                    : 'bg-orange-50 text-orange-700'
-                    ">
+                  <span
+                    class="rounded-full px-3 py-1.5 text-xs font-semibold"
+                    :class="
+                      user.status === 'approved'
+                        ? 'bg-green-50 text-green-700'
+                        : 'bg-orange-50 text-orange-700'
+                    "
+                  >
                     {{ user.status === 'approved' ? 'Approved' : 'Pending' }}
                   </span>
                 </td>
@@ -223,11 +275,13 @@ onMounted(() => {
                 </td>
 
                 <td class="px-6 py-4 text-right">
-                  <button v-if="user.status === 'pending' && user.role === 'user'"
+                  <button
+                    v-if="user.status === 'pending' && user.role === 'user'"
                     :disabled="approvingUserId === user._id"
                     class="rounded-xl bg-orange-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-orange-600 disabled:opacity-50"
-                    @click="handleApprove(user)">
-                    {{ approvingUserId === user._id ? 'กำลังอนุมัติ...' : 'Approve' }}
+                    @click="requestApproval(user)"
+                  >
+                    {{ approvingUserId === user._id ? 'กำลังอนุมัติ...' : 'อนุมัติผู้ใช้' }}
                   </button>
 
                   <span v-else class="text-sm text-slate-400"> — </span>
@@ -239,4 +293,22 @@ onMounted(() => {
       </div>
     </div>
   </section>
+  <AppConfirmDialog
+    :open="pendingApproval !== null"
+    title="อนุมัติผู้ใช้งาน?"
+    :description="
+      'อนุมัติบัญชี ' +
+      (pendingApproval?.username ?? '') +
+      ' เพื่อให้ผู้ใช้นี้เข้าสู่ระบบร้านค้าได้'
+    "
+    confirm-label="อนุมัติผู้ใช้"
+    cancel-label="ยกเลิก"
+    busy-label="กำลังอนุมัติ..."
+    intent="primary"
+    :busy="approvingUserId !== null"
+    :error="approvalError"
+    :fallback-focus="listHeading"
+    @confirm="confirmApproval"
+    @cancel="cancelApproval"
+  />
 </template>
